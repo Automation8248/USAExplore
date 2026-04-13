@@ -8,7 +8,6 @@ from playwright.sync_api import sync_playwright
 # ==========================================
 # CONFIGURATION & DATA
 # ==========================================
-# Updated queries exactly as you requested
 QUERIES = [
     "USA best places", 
     "USA tourist places", 
@@ -21,7 +20,7 @@ QUERIES = [
 
 HISTORY_FILE = "history.txt"
 
-# 15+ Unique User-Agents (Not Deleted)
+# 15+ Unique User-Agents to prevent blocking
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
@@ -45,10 +44,7 @@ USER_AGENTS = [
 # ==========================================
 def get_seo_content(query_text):
     """Generates clean title and platform-specific hashtags"""
-    # Clean Title (No hashtags or stars)
     title = f"Exploring {query_text} - United States"
-    
-    # Platform Specific SEO Hashtags
     fb_tags = "#USA #TravelUSA #AmericanCulture #ExploreMore #Vacation"
     ig_tags = "#USATravel #InstaTravel #ExploreUSA #TravelGram #USATrip"
     yt_tags = "#TravelGuide #USA #VacationUSA #Shorts #USATour"
@@ -66,19 +62,19 @@ def save_history(url):
         f.write(url + "\n")
 
 # ==========================================
-# MAIN AUTOMATION LOGIC
+# MAIN HUMAN-BEHAVIOR AUTOMATION
 # ==========================================
 def run_automation():
     history = get_history()
     
-    # Select random query from the list and add random number for uniqueness
     base_query = random.choice(QUERIES)
-    search_query = f"{base_query} {random.randint(1, 999)}"
+    search_query = f"{base_query} high resolution {random.randint(1, 999)}"
     title, fb_tags, ig_tags, yt_tags = get_seo_content(base_query)
     
     print(f"Starting Human-like search for: {search_query}")
     
     success = False
+    
     # Failover Logic: Try up to 3 times
     for attempt in range(3):
         if success:
@@ -91,76 +87,96 @@ def run_automation():
         try:
             with sync_playwright() as p:
                 browser = getattr(p, browser_engine).launch(headless=True)
-                # locale='en-US' forces Google to show English UI so "Images" text is findable
-                context = browser.new_context(user_agent=user_agent, locale='en-US')
+                # Setting a large viewport to mimic a real desktop monitor
+                context = browser.new_context(
+                    user_agent=user_agent, 
+                    locale='en-US',
+                    viewport={'width': 1920, 'height': 1080}
+                )
                 page = context.new_page()
                 
-                # --- NEW HUMAN SIMULATION LOGIC START ---
-                
-                # 1. Open Google Home Page
+                # --- 1. OPEN GOOGLE ---
                 print("1. Opening Google.com")
                 page.goto("https://www.google.com/")
-                page.wait_for_timeout(2000) # Human delay
+                page.wait_for_timeout(random.randint(2000, 4000))
                 
-                # 2. Find Search Bar, Type Query and Press Enter
-                print(f"2. Typing query: {search_query}")
-                page.locator('[name="q"]').fill(search_query)
-                page.wait_for_timeout(1000) # Human delay before pressing enter
-                page.keyboard.press("Enter")
+                # --- 2. HUMAN TYPING ---
+                print("2. Typing like a human...")
+                search_input = page.locator('[name="q"]')
+                # Type each character with a random delay to simulate human typing
+                search_input.press_sequentially(search_query, delay=random.randint(50, 150))
+                page.wait_for_timeout(random.randint(800, 1500))
+                search_input.press("Enter")
                 page.wait_for_load_state("networkidle")
-                page.wait_for_timeout(2000)
+                page.wait_for_timeout(random.randint(2000, 3000))
                 
-                # 3. Click on the "Images" tab below the search bar
-                print("3. Clicking on 'Images' tab")
-                # Looks for any link containing the exact word "Images"
+                # --- 3. CLICK IMAGES TAB ---
+                print("3. Clicking 'Images' tab")
                 page.locator("a", has_text="Images").first.click()
-                page.wait_for_timeout(4000) # Wait for images to load properly
+                page.wait_for_timeout(random.randint(3000, 5000))
                 
-                # --- HUMAN SIMULATION LOGIC END ---
+                # --- 4. HUMAN SCROLLING ---
+                print("4. Scrolling naturally...")
+                page.mouse.wheel(0, random.randint(600, 1200))
+                page.wait_for_timeout(random.randint(1500, 3000))
                 
-                images = page.query_selector_all("img")
-                print(f"Found {len(images)} potential images.")
+                # --- 5. CLICK A THUMBNAIL (Like a user picking a photo) ---
+                print("5. Clicking a photo to open HD preview...")
+                # Select a random image from the top 5 results and click it
+                index_to_click = random.randint(0, 4)
+                page.locator("div[data-ri] img, img[jsname='Q4LuWd']").nth(index_to_click).click(force=True)
                 
-                for img in images:
+                # Wait for the HD image to load in the side panel
+                page.wait_for_timeout(random.randint(4000, 7000))
+                
+                # --- 6. EXTRACT & DOWNLOAD EXACT HD IMAGE ---
+                print("6. Extracting HD image URL...")
+                hd_img_url = None
+                
+                # We extract the image that does NOT have 'encrypted' in URL (which means it's the real HD one, not a thumbnail)
+                all_images = page.locator("img").all()
+                for img in all_images:
                     src = img.get_attribute("src")
+                    if src and src.startswith("http") and "encrypted-tbn0" not in src and src not in history:
+                        hd_img_url = src
+                        break # Stop searching, we found our single HD image
+                
+                if hd_img_url:
+                    print(f"Downloading HD URL: {hd_img_url[:60]}...")
+                    img_data = requests.get(hd_img_url, timeout=15).content
+                    with open("temp.jpg", "wb") as f:
+                        f.write(img_data)
                     
-                    # Filter out small thumbnails and already downloaded
-                    if src and src.startswith("http") and len(src) > 100 and src not in history:
-                        print(f"Downloading image: {src[:50]}...")
-                        
-                        img_data = requests.get(src, timeout=15).content
-                        with open("temp.jpg", "wb") as f:
-                            f.write(img_data)
-                        
-                        # --- 1. SEND TO TELEGRAM (ONLY Image + Date/Time) ---
-                        now = datetime.datetime.now().strftime("%d-%m-%Y %H:%M:%S")
-                        tg_token = os.getenv("TELEGRAM_BOT_TOKEN")
-                        tg_chat = os.getenv("TELEGRAM_CHAT_ID")
-                        
-                        if tg_token and tg_chat:
-                            tg_url = f"https://api.telegram.org/bot{tg_token}/sendPhoto"
-                            requests.post(tg_url, data={"chat_id": tg_chat, "caption": f"Date: {now}"}, files={"photo": open("temp.jpg", "rb")})
-                            print("Sent to Telegram.")
-                        
-                        # --- 2. SEND TO WEBHOOK (Full Meta Data) ---
-                        webhook_url = os.getenv("WEBHOOK_URL")
-                        if webhook_url:
-                            webhook_data = {
-                                "image_url": src,
-                                "title": title,
-                                "query_used": base_query,
-                                "facebook_tags": fb_tags,
-                                "instagram_tags": ig_tags,
-                                "youtube_tags": yt_tags,
-                                "caption": f"Check out this amazing spot: {base_query}!"
-                            }
-                            requests.post(webhook_url, json=webhook_data)
-                            print("Sent to Webhook.")
-                        
-                        # Save to history so it never downloads again
-                        save_history(src)
-                        success = True
-                        break # Exit loop once one valid image is processed
+                    # --- TELEGRAM: Send ONLY Image + Date/Time ---
+                    now = datetime.datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+                    tg_token = os.getenv("TELEGRAM_BOT_TOKEN")
+                    tg_chat = os.getenv("TELEGRAM_CHAT_ID")
+                    
+                    if tg_token and tg_chat:
+                        tg_url = f"https://api.telegram.org/bot{tg_token}/sendPhoto"
+                        requests.post(tg_url, data={"chat_id": tg_chat, "caption": f"Date: {now}"}, files={"photo": open("temp.jpg", "rb")})
+                        print("Sent to Telegram.")
+                    
+                    # --- WEBHOOK: Send Full Data (URL, Caption, Tags) ---
+                    webhook_url = os.getenv("WEBHOOK_URL")
+                    if webhook_url:
+                        webhook_data = {
+                            "image_url": hd_img_url,
+                            "title": title,
+                            "query_used": base_query,
+                            "facebook_tags": fb_tags,
+                            "instagram_tags": ig_tags,
+                            "youtube_tags": yt_tags,
+                            "caption": f"Check out this amazing spot: {base_query}!"
+                        }
+                        requests.post(webhook_url, json=webhook_data)
+                        print("Sent to Webhook.")
+                    
+                    # Save to history so it's never repeated
+                    save_history(hd_img_url)
+                    success = True
+                else:
+                    print("Could not find HD image link, trying another browser...")
                 
                 browser.close()
                 
