@@ -8,11 +8,20 @@ from playwright.sync_api import sync_playwright
 # ==========================================
 # CONFIGURATION & DATA
 # ==========================================
-CITIES = ["New York City", "Los Angeles", "Chicago", "Miami", "San Francisco", "Las Vegas", "Seattle", "Austin", "Washington DC", "Boston"]
-CATEGORIES = ["Famous Places", "Must Visit", "Tourist Attractions", "Vacation Spots", "Best Places to Live", "City Life"]
+# Updated queries exactly as you requested
+QUERIES = [
+    "USA best places", 
+    "USA tourist places", 
+    "USA visiting places", 
+    "best vacation spots in USA", 
+    "famous cities in USA to visit",
+    "top tourist attractions USA",
+    "beautiful places to live in USA"
+]
+
 HISTORY_FILE = "history.txt"
 
-# 15+ Unique User-Agents to prevent blocking
+# 15+ Unique User-Agents (Not Deleted)
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
@@ -34,15 +43,15 @@ USER_AGENTS = [
 # ==========================================
 # HELPER FUNCTIONS
 # ==========================================
-def get_seo_content(city, category):
+def get_seo_content(query_text):
     """Generates clean title and platform-specific hashtags"""
     # Clean Title (No hashtags or stars)
-    title = f"Exploring {city} {category}"
+    title = f"Exploring {query_text} - United States"
     
     # Platform Specific SEO Hashtags
-    fb_tags = "#USA #TravelUSA #CityVibes #AmericanCulture #ExploreMore"
-    ig_tags = "#USATravel #InstaTravel #CityPhotography #ExploreUSA #TravelGram"
-    yt_tags = "#TravelGuide #USA #CityTour #VacationUSA #Shorts"
+    fb_tags = "#USA #TravelUSA #AmericanCulture #ExploreMore #Vacation"
+    ig_tags = "#USATravel #InstaTravel #ExploreUSA #TravelGram #USATrip"
+    yt_tags = "#TravelGuide #USA #VacationUSA #Shorts #USATour"
     
     return title, fb_tags, ig_tags, yt_tags
 
@@ -61,14 +70,13 @@ def save_history(url):
 # ==========================================
 def run_automation():
     history = get_history()
-    city = random.choice(CITIES)
-    category = random.choice(CATEGORIES)
     
-    # Adding random number to make search query unique every time (helps bypass blocks)
-    query = f"{city} {category} USA {random.randint(1, 999)}"
-    title, fb_tags, ig_tags, yt_tags = get_seo_content(city, category)
+    # Select random query from the list and add random number for uniqueness
+    base_query = random.choice(QUERIES)
+    search_query = f"{base_query} {random.randint(1, 999)}"
+    title, fb_tags, ig_tags, yt_tags = get_seo_content(base_query)
     
-    print(f"Starting search for: {query}")
+    print(f"Starting Human-like search for: {search_query}")
     
     success = False
     # Failover Logic: Try up to 3 times
@@ -78,18 +86,37 @@ def run_automation():
             
         browser_engine = random.choice(["chromium", "firefox", "webkit"])
         user_agent = random.choice(USER_AGENTS)
-        print(f"Attempt {attempt + 1}: Using {browser_engine.upper()} with random User-Agent")
+        print(f"Attempt {attempt + 1}: Using {browser_engine.upper()}")
 
         try:
             with sync_playwright() as p:
                 browser = getattr(p, browser_engine).launch(headless=True)
-                context = browser.new_context(user_agent=user_agent)
+                # locale='en-US' forces Google to show English UI so "Images" text is findable
+                context = browser.new_context(user_agent=user_agent, locale='en-US')
                 page = context.new_page()
                 
-                # Google Images URL with 'Large' size filter (tbs=isz:l)
-                search_url = f"https://www.google.com/search?q={query}&tbm=isch&tbs=isz:l"
-                page.goto(search_url)
-                page.wait_for_timeout(5000) # Wait 5 seconds to let images load fully
+                # --- NEW HUMAN SIMULATION LOGIC START ---
+                
+                # 1. Open Google Home Page
+                print("1. Opening Google.com")
+                page.goto("https://www.google.com/")
+                page.wait_for_timeout(2000) # Human delay
+                
+                # 2. Find Search Bar, Type Query and Press Enter
+                print(f"2. Typing query: {search_query}")
+                page.locator('[name="q"]').fill(search_query)
+                page.wait_for_timeout(1000) # Human delay before pressing enter
+                page.keyboard.press("Enter")
+                page.wait_for_load_state("networkidle")
+                page.wait_for_timeout(2000)
+                
+                # 3. Click on the "Images" tab below the search bar
+                print("3. Clicking on 'Images' tab")
+                # Looks for any link containing the exact word "Images"
+                page.locator("a", has_text="Images").first.click()
+                page.wait_for_timeout(4000) # Wait for images to load properly
+                
+                # --- HUMAN SIMULATION LOGIC END ---
                 
                 images = page.query_selector_all("img")
                 print(f"Found {len(images)} potential images.")
@@ -97,7 +124,7 @@ def run_automation():
                 for img in images:
                     src = img.get_attribute("src")
                     
-                    # Filter out invalid, tiny thumbnails, and already downloaded images
+                    # Filter out small thumbnails and already downloaded
                     if src and src.startswith("http") and len(src) > 100 and src not in history:
                         print(f"Downloading image: {src[:50]}...")
                         
@@ -121,12 +148,11 @@ def run_automation():
                             webhook_data = {
                                 "image_url": src,
                                 "title": title,
-                                "city": city,
-                                "category": category,
+                                "query_used": base_query,
                                 "facebook_tags": fb_tags,
                                 "instagram_tags": ig_tags,
                                 "youtube_tags": yt_tags,
-                                "caption": f"Welcome to {city}! Check out this amazing {category}."
+                                "caption": f"Check out this amazing spot: {base_query}!"
                             }
                             requests.post(webhook_url, json=webhook_data)
                             print("Sent to Webhook.")
@@ -134,13 +160,13 @@ def run_automation():
                         # Save to history so it never downloads again
                         save_history(src)
                         success = True
-                        break # Exit the image loop once one is successfully processed
+                        break # Exit loop once one valid image is processed
                 
                 browser.close()
                 
         except Exception as e:
             print(f"Attempt {attempt + 1} Failed: {e}")
-            time.sleep(2) # Chota pause before next retry
+            time.sleep(3)
             continue
 
 if __name__ == "__main__":
