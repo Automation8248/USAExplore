@@ -19,8 +19,12 @@ QUERIES = [
 ]
 
 HISTORY_FILE = "history.txt"
+SCREENSHOT_DIR = "debug_screenshots" # Screenshot save karne ka folder
 
-# 15+ Unique User-Agents to prevent blocking
+# Make sure screenshot folder exists
+os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+
+# 15+ Unique User-Agents
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
@@ -43,12 +47,10 @@ USER_AGENTS = [
 # HELPER FUNCTIONS
 # ==========================================
 def get_seo_content(query_text):
-    """Generates clean title and platform-specific hashtags"""
     title = f"Exploring {query_text} - United States"
     fb_tags = "#USA #TravelUSA #AmericanCulture #ExploreMore #Vacation"
     ig_tags = "#USATravel #InstaTravel #ExploreUSA #TravelGram #USATrip"
     yt_tags = "#TravelGuide #USA #VacationUSA #Shorts #USATour"
-    
     return title, fb_tags, ig_tags, yt_tags
 
 def get_history():
@@ -66,16 +68,13 @@ def save_history(url):
 # ==========================================
 def run_automation():
     history = get_history()
-    
     base_query = random.choice(QUERIES)
     search_query = f"{base_query} high resolution {random.randint(1, 999)}"
     title, fb_tags, ig_tags, yt_tags = get_seo_content(base_query)
     
     print(f"Starting Human-like search for: {search_query}")
-    
     success = False
     
-    # Failover Logic: Try up to 3 times
     for attempt in range(3):
         if success:
             break
@@ -87,7 +86,6 @@ def run_automation():
         try:
             with sync_playwright() as p:
                 browser = getattr(p, browser_engine).launch(headless=True)
-                # Setting a large viewport to mimic a real desktop monitor
                 context = browser.new_context(
                     user_agent=user_agent, 
                     locale='en-US',
@@ -99,47 +97,47 @@ def run_automation():
                 print("1. Opening Google.com")
                 page.goto("https://www.google.com/")
                 page.wait_for_timeout(random.randint(2000, 4000))
+                page.screenshot(path=f"{SCREENSHOT_DIR}/1_homepage.png") # SCREENSHOT
                 
                 # --- 2. HUMAN TYPING ---
                 print("2. Typing like a human...")
                 search_input = page.locator('[name="q"]')
-                # Type each character with a random delay to simulate human typing
                 search_input.press_sequentially(search_query, delay=random.randint(50, 150))
                 page.wait_for_timeout(random.randint(800, 1500))
                 search_input.press("Enter")
                 page.wait_for_load_state("networkidle")
                 page.wait_for_timeout(random.randint(2000, 3000))
+                page.screenshot(path=f"{SCREENSHOT_DIR}/2_search_results.png") # SCREENSHOT
                 
                 # --- 3. CLICK IMAGES TAB ---
                 print("3. Clicking 'Images' tab")
                 page.locator("a", has_text="Images").first.click()
                 page.wait_for_timeout(random.randint(3000, 5000))
+                page.screenshot(path=f"{SCREENSHOT_DIR}/3_images_tab.png") # SCREENSHOT
                 
                 # --- 4. HUMAN SCROLLING ---
                 print("4. Scrolling naturally...")
                 page.mouse.wheel(0, random.randint(600, 1200))
                 page.wait_for_timeout(random.randint(1500, 3000))
+                page.screenshot(path=f"{SCREENSHOT_DIR}/4_after_scroll.png") # SCREENSHOT
                 
-                # --- 5. CLICK A THUMBNAIL (Like a user picking a photo) ---
+                # --- 5. CLICK A THUMBNAIL ---
                 print("5. Clicking a photo to open HD preview...")
-                # Select a random image from the top 5 results and click it
                 index_to_click = random.randint(0, 4)
                 page.locator("div[data-ri] img, img[jsname='Q4LuWd']").nth(index_to_click).click(force=True)
-                
-                # Wait for the HD image to load in the side panel
                 page.wait_for_timeout(random.randint(4000, 7000))
+                page.screenshot(path=f"{SCREENSHOT_DIR}/5_hd_preview_open.png") # SCREENSHOT
                 
-                # --- 6. EXTRACT & DOWNLOAD EXACT HD IMAGE ---
+                # --- 6. EXTRACT & DOWNLOAD ---
                 print("6. Extracting HD image URL...")
                 hd_img_url = None
                 
-                # We extract the image that does NOT have 'encrypted' in URL (which means it's the real HD one, not a thumbnail)
                 all_images = page.locator("img").all()
                 for img in all_images:
                     src = img.get_attribute("src")
                     if src and src.startswith("http") and "encrypted-tbn0" not in src and src not in history:
                         hd_img_url = src
-                        break # Stop searching, we found our single HD image
+                        break 
                 
                 if hd_img_url:
                     print(f"Downloading HD URL: {hd_img_url[:60]}...")
@@ -147,17 +145,15 @@ def run_automation():
                     with open("temp.jpg", "wb") as f:
                         f.write(img_data)
                     
-                    # --- TELEGRAM: Send ONLY Image + Date/Time ---
+                    # --- TELEGRAM ---
                     now = datetime.datetime.now().strftime("%d-%m-%Y %H:%M:%S")
                     tg_token = os.getenv("TELEGRAM_BOT_TOKEN")
                     tg_chat = os.getenv("TELEGRAM_CHAT_ID")
-                    
                     if tg_token and tg_chat:
                         tg_url = f"https://api.telegram.org/bot{tg_token}/sendPhoto"
                         requests.post(tg_url, data={"chat_id": tg_chat, "caption": f"Date: {now}"}, files={"photo": open("temp.jpg", "rb")})
-                        print("Sent to Telegram.")
                     
-                    # --- WEBHOOK: Send Full Data (URL, Caption, Tags) ---
+                    # --- WEBHOOK ---
                     webhook_url = os.getenv("WEBHOOK_URL")
                     if webhook_url:
                         webhook_data = {
@@ -170,9 +166,7 @@ def run_automation():
                             "caption": f"Check out this amazing spot: {base_query}!"
                         }
                         requests.post(webhook_url, json=webhook_data)
-                        print("Sent to Webhook.")
                     
-                    # Save to history so it's never repeated
                     save_history(hd_img_url)
                     success = True
                 else:
@@ -182,6 +176,9 @@ def run_automation():
                 
         except Exception as e:
             print(f"Attempt {attempt + 1} Failed: {e}")
+            # Screenshot of the error state
+            if 'page' in locals():
+                page.screenshot(path=f"{SCREENSHOT_DIR}/error_attempt_{attempt+1}.png")
             time.sleep(3)
             continue
 
