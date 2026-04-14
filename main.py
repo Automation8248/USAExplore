@@ -125,9 +125,32 @@ def get_platform_tags():
     return fb_tags, ig_tags, yt_tags
 
 QUERIES = [
+    # General USA Search
     "USA best places", "USA tourist places", "USA visiting places", 
     "best vacation spots in USA", "top tourist attractions USA",
-    "Grand Canyon USA", "New York City landmarks", "Miami Beach Florida"
+    
+    # Famous Cities & Landmarks
+    "New York City landmarks", "Times Square New York bright lights", "Statue of Liberty NYC",
+    "Los Angeles Hollywood sign", "Beverly Hills California",
+    "Las Vegas Strip nightlife", "Las Vegas beautiful casinos",
+    "Golden Gate Bridge San Francisco", "San Francisco city views",
+    "Miami Beach Florida", "Key West Florida sunset",
+    "Chicago skyline high resolution", "Chicago Cloud Gate",
+    "Washington DC monuments", "White House Washington DC",
+    "Seattle Space Needle view", "Boston historic trails",
+    "New Orleans French Quarter", "Honolulu Hawaii beaches",
+    "Charleston South Carolina architecture", "Savannah Georgia historic streets",
+    
+    # National Parks & Nature (For breathtaking views)
+    "Grand Canyon USA", "Grand Canyon sunset high resolution",
+    "Yellowstone National Park nature", "Yosemite National Park views",
+    "Glacier National Park landscapes", "Zion National Park USA",
+    "Rocky Mountains Colorado", "Sedona Arizona red rocks",
+    "Lake Tahoe beautiful views", "Antelope Canyon Arizona",
+    "Bryce Canyon Utah", "Death Valley California",
+    "Acadia National Park Maine", "Mount Rainier Washington",
+    "Smoky Mountains Tennessee nature", "Niagara Falls USA side",
+    "Mount Rushmore monument", "Alaska Northern Lights USA"
 ]
 
 HISTORY_FILE = "history.txt"
