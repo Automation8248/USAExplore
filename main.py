@@ -4,6 +4,7 @@ import requests
 import datetime
 import shutil
 import hashlib
+from duckduckgo_search import DDGS
 from bing_image_downloader import downloader
 
 # ==========================================
@@ -118,7 +119,7 @@ UNIVERSAL_CAPTIONS = [
 ]
 
 # ==========================================
-# 3. PLATFORM SPECIFIC SEO TAGS (Hashtags here are okay for backend)
+# 3. PLATFORM SPECIFIC SEO TAGS 
 # ==========================================
 def get_platform_tags():
     fb_tags = "#USA #TravelUSA #AmericanCulture #ExploreMore #Vacation"
@@ -133,7 +134,7 @@ QUERIES = [
 ]
 
 HISTORY_FILE = "history.txt"
-OUTPUT_DIR = "dataset"
+OUTPUT_DIR = "dataset" # For Bing Backup
 
 # ==========================================
 # 4. HELPER FUNCTIONS
@@ -144,23 +145,147 @@ def get_history():
             return set(f.read().splitlines())
     return set()
 
-def save_history(image_hash):
+def save_history(record):
     with open(HISTORY_FILE, "a") as f:
-        f.write(image_hash + "\n")
+        f.write(record + "\n")
 
 def get_image_hash(filepath):
-    """Generates MD5 hash of the image to prevent duplicate uploads"""
     with open(filepath, "rb") as f:
         return hashlib.md5(f.read()).hexdigest()
 
+def get_current_time_data():
+    now = datetime.datetime.now()
+    return {
+        "day": now.strftime("%A"),
+        "date": now.strftime("%d-%B-%Y"),
+        "time": now.strftime("%H:%M:%S")
+    }
+
+def send_to_telegram(photo_path, time_data):
+    tg_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    tg_chat = os.getenv("TELEGRAM_CHAT_ID")
+    if tg_token and tg_chat:
+        tg_url = f"https://api.telegram.org/bot{tg_token}/sendPhoto"
+        tg_message = f"Day: {time_data['day']}\nDate: {time_data['date']}\nTime: {time_data['time']}"
+        with open(photo_path, "rb") as photo:
+            requests.post(tg_url, data={"chat_id": tg_chat, "caption": tg_message}, files={"photo": photo})
+        print("📤 Sent to Telegram with Exact Time/Date.")
+
+def send_to_webhook(payload):
+    webhook_url = os.getenv("WEBHOOK_URL")
+    if webhook_url:
+        requests.post(webhook_url, json=payload)
+        print("🔗 Sent full data to Webhook.")
+
 # ==========================================
-# 5. MAIN AUTOMATION LOGIC
+# 5. SEARCH LOGIC (DUCKDUCKGO - Primary)
+# ==========================================
+def try_duckduckgo(search_query, selected_title, selected_caption, fb_tags, ig_tags, yt_tags, history):
+    try:
+        print("🌐 Trying Primary Method: DuckDuckGo...")
+        with DDGS() as ddgs:
+            results = list(ddgs.images(search_query, size="Large", max_results=10))
+        
+        for result in results:
+            img_url = result.get("image")
+            if img_url and img_url not in history:
+                print(f"✅ [DDG] Found Unique Image URL: {img_url}")
+                
+                # Download temp for Telegram
+                img_data = requests.get(img_url, timeout=15).content
+                temp_file = "temp_post.jpg"
+                with open(temp_file, "wb") as f:
+                    f.write(img_data)
+                
+                time_data = get_current_time_data()
+                
+                # Send to Telegram
+                send_to_telegram(temp_file, time_data)
+                
+                # Send to Webhook (With Direct URL)
+                webhook_payload = {
+                    "image_url": img_url,
+                    "title": selected_title,
+                    "caption": selected_caption,
+                    "facebook_tags": fb_tags,
+                    "instagram_tags": ig_tags,
+                    "youtube_tags": yt_tags,
+                    "status": "Success_DDG",
+                    "run_day": time_data["day"],
+                    "run_date": time_data["date"],
+                    "run_time": time_data["time"]
+                }
+                send_to_webhook(webhook_payload)
+                
+                save_history(img_url)
+                if os.path.exists(temp_file): os.remove(temp_file)
+                return True
+    except Exception as e:
+        print(f"⚠️ [DDG] Error: {e}")
+    return False
+
+# ==========================================
+# 6. SEARCH LOGIC (BING - Fallback/Backup)
+# ==========================================
+def try_bing(search_query, selected_title, selected_caption, fb_tags, ig_tags, yt_tags, history):
+    try:
+        print("🔄 Primary Failed. Switching to Backup Method: Bing Downloader...")
+        downloader.download(search_query, limit=1, output_dir=OUTPUT_DIR, adult_filter_off=True, force_replace=False, timeout=30, verbose=False)
+        
+        query_folder = os.path.join(OUTPUT_DIR, search_query)
+        if not os.path.exists(query_folder):
+            return False
+
+        for img_file in os.listdir(query_folder):
+            img_path = os.path.join(query_folder, img_file)
+            img_hash = get_image_hash(img_path)
+            
+            if img_hash not in history:
+                print(f"✅ [BING] Found Unique Image: {img_file}")
+                
+                time_data = get_current_time_data()
+                
+                # Send to Telegram
+                send_to_telegram(img_path, time_data)
+                
+                # Send to Webhook
+                webhook_payload = {
+                    "image_url": "Downloaded via Bing - No Public URL", 
+                    "image_name": img_file,
+                    "title": selected_title,
+                    "caption": selected_caption,
+                    "facebook_tags": fb_tags,
+                    "instagram_tags": ig_tags,
+                    "youtube_tags": yt_tags,
+                    "status": "Success_BING",
+                    "run_day": time_data["day"],
+                    "run_date": time_data["date"],
+                    "run_time": time_data["time"]
+                }
+                send_to_webhook(webhook_payload)
+                
+                save_history(img_hash)
+                
+                # Cleanup
+                shutil.rmtree(OUTPUT_DIR, ignore_errors=True)
+                return True
+            else:
+                print("⚠️ [BING] Duplicate Hash found.")
+                
+        # Cleanup even if no unique image found
+        shutil.rmtree(OUTPUT_DIR, ignore_errors=True)
+    except Exception as e:
+        print(f"⚠️ [BING] Error: {e}")
+        if os.path.exists(OUTPUT_DIR): shutil.rmtree(OUTPUT_DIR, ignore_errors=True)
+    return False
+
+# ==========================================
+# 7. MAIN EXECUTION (Failover System)
 # ==========================================
 def run_automation():
     history = get_history()
     base_query = random.choice(QUERIES)
     
-    # Pick random Title and Caption
     selected_title = random.choice(UNIVERSAL_TITLES)
     selected_caption = random.choice(UNIVERSAL_CAPTIONS)
     fb_tags, ig_tags, yt_tags = get_platform_tags()
@@ -169,87 +294,26 @@ def run_automation():
 
     success = False
     
-    # Retry loop to find exactly 1 unique image
-    for attempt in range(5):
+    # Try 3 times total
+    for attempt in range(3):
         if success:
             break
             
         search_query = f"{base_query} high resolution {random.randint(1, 1000)}"
-        print(f"🚀 Attempt {attempt+1}: Downloading strictly 1 image for '{search_query}'")
+        print(f"\n🚀 ATTEMPT {attempt+1} for: '{search_query}'")
 
-        # ONLY 1 IMAGE DOWNLOAD
-        downloader.download(
-            search_query, 
-            limit=1, 
-            output_dir=OUTPUT_DIR, 
-            adult_filter_off=True, 
-            force_replace=False, 
-            timeout=30,
-            verbose=False
-        )
-
-        query_folder = os.path.join(OUTPUT_DIR, search_query)
-        if not os.path.exists(query_folder):
-            print("❌ Download failed for this query, trying next...")
-            continue
-
-        for img_file in os.listdir(query_folder):
-            img_path = os.path.join(query_folder, img_file)
+        # STEP 1: Try DuckDuckGo first
+        if try_duckduckgo(search_query, selected_title, selected_caption, fb_tags, ig_tags, yt_tags, history):
+            success = True
+            break
             
-            img_hash = get_image_hash(img_path)
-            
-            if img_hash not in history:
-                print(f"✅ Found New Unique Image: {img_file}")
-                
-                # --- 1. CURRENT DATE, DAY, AND TIME LOGIC ---
-                now = datetime.datetime.now()
-                current_day = now.strftime("%A")            # e.g., Tuesday
-                current_date = now.strftime("%d-%B-%Y")     # e.g., 14-April-2026
-                current_time = now.strftime("%H:%M:%S")     # e.g., 14:30:45 (with seconds)
-
-                # --- 2. SEND TO TELEGRAM (ONLY Date/Time info) ---
-                tg_token = os.getenv("TELEGRAM_BOT_TOKEN")
-                tg_chat = os.getenv("TELEGRAM_CHAT_ID")
-                
-                if tg_token and tg_chat:
-                    tg_url = f"https://api.telegram.org/bot{tg_token}/sendPhoto"
-                    # Telegram message formatting exactly as requested
-                    tg_message = f"Day: {current_day}\nDate: {current_date}\nTime: {current_time}"
-                    
-                    with open(img_path, "rb") as photo:
-                        requests.post(tg_url, data={"chat_id": tg_chat, "caption": tg_message}, files={"photo": photo})
-                    print("📤 Sent to Telegram with Exact Time/Date.")
-
-                # --- 3. SEND TO WEBHOOK (Full Data) ---
-                webhook_url = os.getenv("WEBHOOK_URL")
-                if webhook_url:
-                    payload = {
-                        "title": selected_title,
-                        "caption": selected_caption,
-                        "facebook_tags": fb_tags,
-                        "instagram_tags": ig_tags,
-                        "youtube_tags": yt_tags,
-                        "image_name": img_file,
-                        "status": "Success",
-                        "run_day": current_day,
-                        "run_date": current_date,
-                        "run_time": current_time
-                    }
-                    requests.post(webhook_url, json=payload)
-                    print("🔗 Sent full data to Webhook.")
-
-                save_history(img_hash)
-                success = True
-                break 
-            else:
-                print(f"⚠️ Image was a duplicate (Hash matched), rejecting it...")
-
-        # Delete the dataset folder to save space and keep it clean
-        shutil.rmtree(OUTPUT_DIR)
-        print("🧹 Folder Cleaned.")
+        # STEP 2: If DDG fails, instantly try Bing
+        if try_bing(search_query, selected_title, selected_caption, fb_tags, ig_tags, yt_tags, history):
+            success = True
+            break
 
     if not success:
-        print("❌ Could not find a new unique image after 5 attempts.")
+        print("❌ All methods (DuckDuckGo & Bing) failed after multiple attempts.")
 
 if __name__ == "__main__":
     run_automation()
