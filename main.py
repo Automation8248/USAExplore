@@ -2,9 +2,7 @@ import os
 import random
 import requests
 import datetime
-import shutil
-import hashlib
-from bing_image_downloader import downloader
+import re
 
 # ==========================================
 # 1. 80+ UNIVERSAL TITLES (NO Hashtags/Stars)
@@ -133,7 +131,6 @@ QUERIES = [
 ]
 
 HISTORY_FILE = "history.txt"
-OUTPUT_DIR = "dataset"
 
 # ==========================================
 # 4. HELPER FUNCTIONS
@@ -144,17 +141,12 @@ def get_history():
             return set(f.read().splitlines())
     return set()
 
-def save_history(image_hash):
+def save_history(url):
     with open(HISTORY_FILE, "a") as f:
-        f.write(image_hash + "\n")
-
-def get_image_hash(filepath):
-    """Generates MD5 hash of the image to prevent duplicate uploads"""
-    with open(filepath, "rb") as f:
-        return hashlib.md5(f.read()).hexdigest()
+        f.write(url + "\n")
 
 # ==========================================
-# 5. MAIN AUTOMATION LOGIC (BING ONLY)
+# 5. MAIN AUTOMATION LOGIC (BING ONLY + DIRECT URL)
 # ==========================================
 def run_automation():
     history = get_history()
@@ -165,94 +157,95 @@ def run_automation():
     selected_caption = random.choice(UNIVERSAL_CAPTIONS)
     fb_tags, ig_tags, yt_tags = get_platform_tags()
     
-    print(f"🎯 Selected Title: {selected_title}")
+    search_query = f"{base_query} high resolution {random.randint(1, 1000)}"
+    print(f"🚀 Searching Bing for: '{search_query}'")
 
-    success = False
+    # Custom Bing Image Search Logic
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
+    search_url = f"https://www.bing.com/images/search?q={search_query}"
     
-    # Retry loop to find exactly 1 unique image
-    for attempt in range(5):
-        if success:
-            break
+    try:
+        response = requests.get(search_url, headers=headers)
+        
+        # Bing HTML se direct Image URL nikalna
+        image_urls = re.findall(r'murl&quot;:&quot;(.*?)&quot;', response.text)
+        if not image_urls:
+            image_urls = re.findall(r'murl":"(.*?)"', response.text)
             
-        search_query = f"{base_query} high resolution {random.randint(1, 1000)}"
-        print(f"🚀 Attempt {attempt+1}: Downloading strictly 1 image for '{search_query}' via Bing")
+        if not image_urls:
+            print("❌ No images found on Bing for this query.")
+            return
 
-        # ONLY 1 IMAGE DOWNLOAD VIA BING
-        try:
-            downloader.download(
-                search_query, 
-                limit=1, 
-                output_dir=OUTPUT_DIR, 
-                adult_filter_off=True, 
-                force_replace=False, 
-                timeout=30,
-                verbose=False
-            )
-        except Exception as e:
-            print(f"⚠️ Error downloading with Bing: {e}")
-            continue
-
-        query_folder = os.path.join(OUTPUT_DIR, search_query)
-        if not os.path.exists(query_folder):
-            print("❌ Download failed for this query, trying next...")
-            continue
-
-        for img_file in os.listdir(query_folder):
-            img_path = os.path.join(query_folder, img_file)
-            
-            img_hash = get_image_hash(img_path)
-            
-            if img_hash not in history:
-                print(f"✅ Found New Unique Image: {img_file}")
+        success = False
+        
+        # Loop chala kar pehli 'Fresh' image process karenge
+        for img_url in image_urls:
+            if img_url.startswith("http") and img_url not in history:
+                print(f"✅ Found New Unique Bing Image URL: {img_url}")
                 
-                # --- 1. CURRENT DATE, DAY, AND TIME LOGIC ---
-                now = datetime.datetime.now()
-                current_day = now.strftime("%A")            
-                current_date = now.strftime("%d-%B-%Y")     
-                current_time = now.strftime("%H:%M:%S")     
-
-                # --- 2. SEND TO TELEGRAM (ONLY Date/Time info) ---
-                tg_token = os.getenv("TELEGRAM_BOT_TOKEN")
-                tg_chat = os.getenv("TELEGRAM_CHAT_ID")
-                
-                if tg_token and tg_chat:
-                    tg_url = f"https://api.telegram.org/bot{tg_token}/sendPhoto"
-                    tg_message = f"Day: {current_day}\nDate: {current_date}\nTime: {current_time}"
+                try:
+                    # 1. Download image temporarily just for Telegram
+                    img_data = requests.get(img_url, timeout=15).content
+                    with open("temp_bing.jpg", "wb") as f:
+                        f.write(img_data)
                     
-                    with open(img_path, "rb") as photo:
-                        requests.post(tg_url, data={"chat_id": tg_chat, "caption": tg_message}, files={"photo": photo})
-                    print("📤 Sent to Telegram with Exact Time/Date.")
+                    # --- CURRENT DATE, DAY, AND TIME LOGIC ---
+                    now = datetime.datetime.now()
+                    current_day = now.strftime("%A")            
+                    current_date = now.strftime("%d-%B-%Y")     
+                    current_time = now.strftime("%H:%M:%S")     
 
-                # --- 3. SEND TO WEBHOOK (Full Data) ---
-                webhook_url = os.getenv("WEBHOOK_URL")
-                if webhook_url:
-                    payload = {
-                        "title": selected_title,
-                        "caption": selected_caption,
-                        "facebook_tags": fb_tags,
-                        "instagram_tags": ig_tags,
-                        "youtube_tags": yt_tags,
-                        "image_name": img_file, # Bing only gives local filename
-                        "status": "Success_BING",
-                        "run_day": current_day,
-                        "run_date": current_date,
-                        "run_time": current_time
-                    }
-                    requests.post(webhook_url, json=payload)
-                    print("🔗 Sent full data to Webhook.")
+                    # --- 2. SEND TO TELEGRAM (ONLY Date/Time info) ---
+                    tg_token = os.getenv("TELEGRAM_BOT_TOKEN")
+                    tg_chat = os.getenv("TELEGRAM_CHAT_ID")
+                    
+                    if tg_token and tg_chat:
+                        tg_url_endpoint = f"https://api.telegram.org/bot{tg_token}/sendPhoto"
+                        tg_message = f"Day: {current_day}\nDate: {current_date}\nTime: {current_time}"
+                        
+                        with open("temp_bing.jpg", "rb") as photo:
+                            requests.post(tg_url_endpoint, data={"chat_id": tg_chat, "caption": tg_message}, files={"photo": photo})
+                        print("📤 Sent to Telegram with Exact Time/Date.")
 
-                save_history(img_hash)
-                success = True
-                break 
-            else:
-                print(f"⚠️ Image was a duplicate (Hash matched), rejecting it...")
+                    # --- 3. SEND TO WEBHOOK (Full Data + URL!) ---
+                    webhook_url = os.getenv("WEBHOOK_URL")
+                    if webhook_url:
+                        payload = {
+                            "image_url": img_url,  # <--- BING DIRECT URL FIX!
+                            "title": selected_title,
+                            "caption": selected_caption,
+                            "facebook_tags": fb_tags,
+                            "instagram_tags": ig_tags,
+                            "youtube_tags": yt_tags,
+                            "status": "Success_BING",
+                            "run_day": current_day,
+                            "run_date": current_date,
+                            "run_time": current_time
+                        }
+                        requests.post(webhook_url, json=payload)
+                        print("🔗 Sent full data + Bing Image URL to Webhook.")
 
-        # Delete the dataset folder to save space and keep it clean
-        shutil.rmtree(OUTPUT_DIR, ignore_errors=True)
-        print("🧹 Folder Cleaned.")
+                    # Save the URL to history so it never repeats
+                    save_history(img_url)
+                    
+                    # Cleanup temporary image
+                    if os.path.exists("temp_bing.jpg"):
+                        os.remove("temp_bing.jpg")
+                    
+                    success = True
+                    break # STRICTLY 1 Image process karega aur loop band kar dega
+                    
+                except Exception as e:
+                    print(f"⚠️ Error with this specific image, trying next: {e}")
+                    continue 
 
-    if not success:
-        print("❌ Could not find a new unique image after 5 attempts.")
+        if not success:
+            print("❌ All scraped images were either already used or invalid.")
+            
+    except Exception as e:
+        print(f"❌ Critical Error searching Bing: {e}")
 
 if __name__ == "__main__":
     run_automation()
