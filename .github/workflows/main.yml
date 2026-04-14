@@ -1,12 +1,12 @@
-name: USA City Automation
+name: USA Automation
 
 on:
   schedule:
-    - cron: '0 */4 * * *'
-  workflow_dispatch:
+    - cron: '0 */4 * * *' # Har 4 ghante mein chalega
+  workflow_dispatch: # Manual run ka option
 
 jobs:
-  scrape:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repo
@@ -17,45 +17,22 @@ jobs:
         with:
           python-version: '3.10'
 
-      # --- NEW: CACHE LOGIC (To speed up installation) ---
-      - name: Cache Playwright Browsers
-        uses: actions/cache@v4
-        id: playwright-cache
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('requirements.txt') }}
-
-      - name: Install Python Dependencies
+      - name: Install Dependencies
         run: pip install -r requirements.txt
-
-      - name: Install Playwright Browsers (Only if cache missed)
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: playwright install --with-deps chromium firefox webkit
-
-      - name: Install OS Dependencies (If cache hit)
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: playwright install-deps chromium firefox webkit
-      # ---------------------------------------------------
 
       - name: Run Script
         env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GOOGLE_CX: ${{ secrets.GOOGLE_CX }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
         run: python main.py
 
-      - name: Upload Screenshots for Debugging
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: debug-screenshots
-          path: debug_screenshots/
-          retention-days: 3
-
-      - name: Save History
+      - name: Commit History
         run: |
-          git config --global user.name "Github Bot"
+          git config --global user.name "Automation Bot"
           git config --global user.email "bot@github.com"
           git add history.txt
-          git commit -m "Update history" || exit 0
+          git commit -m "Update download history" || exit 0
           git push
