@@ -1,9 +1,9 @@
-name: USA Automation
+name: USA Bing Automation
 
 on:
   schedule:
-    - cron: '0 */4 * * *' # Har 4 ghante mein chalega
-  workflow_dispatch: # Manual run ka option
+    - cron: '0 */4 * * *'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -22,8 +22,6 @@ jobs:
 
       - name: Run Script
         env:
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-          GOOGLE_CX: ${{ secrets.GOOGLE_CX }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
@@ -34,5 +32,5 @@ jobs:
           git config --global user.name "Automation Bot"
           git config --global user.email "bot@github.com"
           git add history.txt
-          git commit -m "Update download history" || exit 0
+          git commit -m "Update history" || exit 0
           git push
