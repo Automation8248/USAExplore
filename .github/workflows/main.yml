@@ -2,7 +2,7 @@ name: USA City Automation
 
 on:
   schedule:
-    - cron: '0 */4 * * *' # Every 4 hours
+    - cron: '0 */4 * * *'
   workflow_dispatch:
 
 jobs:
@@ -28,6 +28,15 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
         run: python main.py
+
+      # --- NEW STEP: UPLOAD SCREENSHOTS ---
+      - name: Upload Screenshots for Debugging
+        uses: actions/upload-artifact@v4
+        if: always() # Yeh line ensure karti hai ki script fail bhi ho jaye toh bhi screenshot save ho
+        with:
+          name: debug-screenshots
+          path: debug_screenshots/
+          retention-days: 3 # 3 din tak GitHub par save rahenge
 
       - name: Save History
         run: |
