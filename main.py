@@ -2,16 +2,25 @@ import os
 import random
 import requests
 import datetime
+import shutil
+from bing_image_downloader import downloader
 
 # --- Configuration ---
-API_KEY = os.getenv("GOOGLE_API_KEY")
-CX = os.getenv("GOOGLE_CX")
-HISTORY_FILE = "history.txt"
-
 QUERIES = [
     "USA best places", "USA tourist places", "USA visiting places", 
-    "best vacation spots in USA", "top tourist attractions USA"
+    "best vacation spots in USA", "top tourist attractions USA",
+    "Grand Canyon USA", "New York City landmarks", "Miami Beach Florida"
 ]
+
+HISTORY_FILE = "history.txt"
+OUTPUT_DIR = "dataset"
+
+def get_seo_content(query_text):
+    title = f"Exploring {query_text} - United States"
+    fb_tags = "#USA #TravelUSA #AmericanCulture #ExploreMore #Vacation"
+    ig_tags = "#USATravel #InstaTravel #ExploreUSA #TravelGram #USATrip"
+    yt_tags = "#TravelGuide #USA #VacationUSA #Shorts #USATour"
+    return title, fb_tags, ig_tags, yt_tags
 
 def get_history():
     if os.path.exists(HISTORY_FILE):
@@ -19,63 +28,77 @@ def get_history():
             return set(f.read().splitlines())
     return set()
 
+def save_history(url):
+    with open(HISTORY_FILE, "a") as f:
+        f.write(url + "\n")
+
 def run_automation():
     history = get_history()
-    # Adding a random number to query to get fresh results from Google
     base_query = random.choice(QUERIES)
-    search_query = f"{base_query} {random.randint(1, 100)}" 
+    # Adding variety for search
+    search_query = f"{base_query} high resolution"
+    title, fb_tags, ig_tags, yt_tags = get_seo_content(base_query)
     
-    print(f"Searching for: {search_query}")
-    
-    # Official API URL
-    api_url = f"https://www.googleapis.com/customsearch/v1?q={search_query}&cx={CX}&key={API_KEY}&searchType=image&imgSize=large"
-    
-    try:
-        response = requests.get(api_url).json()
-        items = response.get("items", [])
+    print(f"🚀 Starting Bing Downloader for: {search_query}")
+
+    # Bing downloader logic
+    # Limit 5 rakha hai taaki humein history check karne ke liye options milein
+    downloader.download(
+        search_query, 
+        limit=5, 
+        output_dir=OUTPUT_DIR, 
+        adult_filter_off=True, 
+        force_replace=False, 
+        timeout=60,
+        verbose=False
+    )
+
+    # Downloaded images folder check
+    query_folder = os.path.join(OUTPUT_DIR, search_query)
+    if not os.path.exists(query_folder):
+        print("❌ No images downloaded.")
+        return
+
+    success = False
+    for img_file in os.listdir(query_folder):
+        img_path = os.path.join(query_folder, img_file)
         
-        print(f"Google found {len(items)} images.") # Debug log
-        
-        success = False
-        for item in items:
-            img_url = item['link']
+        # Unique check (using filename as a simple history check for Bing)
+        if img_file not in history:
+            print(f"✅ Processing New Image: {img_file}")
             
-            if img_url not in history:
-                print(f"New Image Found: {img_url}")
-                
-                img_res = requests.get(img_url, timeout=20)
-                if img_res.status_code == 200:
-                    with open("temp.jpg", "wb") as f:
-                        f.write(img_res.content)
-                    
-                    # Telegram
-                    now = datetime.datetime.now().strftime("%d-%m-%Y %H:%M:%S")
-                    tg_token = os.getenv("TELEGRAM_BOT_TOKEN")
-                    tg_chat = os.getenv("TELEGRAM_CHAT_ID")
-                    if tg_token and tg_chat:
-                        requests.post(f"https://api.telegram.org/bot{tg_token}/sendPhoto", 
-                                      data={"chat_id": tg_chat, "caption": f"Date: {now}"}, 
-                                      files={"photo": open("temp.jpg", "rb")})
-                    
-                    # Webhook
-                    webhook_url = os.getenv("WEBHOOK_URL")
-                    if webhook_url:
-                        requests.post(webhook_url, json={"image_url": img_url, "title": f"Exploring {base_query}"})
+            # --- 1. TELEGRAM ---
+            now = datetime.datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+            tg_token = os.getenv("TELEGRAM_BOT_TOKEN")
+            tg_chat = os.getenv("TELEGRAM_CHAT_ID")
+            
+            if tg_token and tg_chat:
+                tg_url = f"https://api.telegram.org/bot{tg_token}/sendPhoto"
+                with open(img_path, "rb") as photo:
+                    requests.post(tg_url, data={"chat_id": tg_chat, "caption": f"Date: {now}"}, files={"photo": photo})
+                print("📤 Sent to Telegram.")
 
-                    # Save to History
-                    with open(HISTORY_FILE, "a") as f:
-                        f.write(img_url + "\n")
-                    
-                    success = True
-                    break
-            else:
-                print("Skipping: Image already in history.")
+            # --- 2. WEBHOOK ---
+            webhook_url = os.getenv("WEBHOOK_URL")
+            if webhook_url:
+                payload = {
+                    "title": title,
+                    "facebook_tags": fb_tags,
+                    "instagram_tags": ig_tags,
+                    "youtube_tags": yt_tags,
+                    "image_name": img_file,
+                    "status": "Success"
+                }
+                requests.post(webhook_url, json=payload)
+                print("🔗 Sent to Webhook.")
 
-        if not success:
-            print("Finished loop: No new unique images found in this batch.")
+            save_history(img_file)
+            success = True
+            break # Process only one image
 
-    except Exception as e:
-        print(f"Error: {e}")
+    # Cleanup: Delete the dataset folder to keep GitHub workspace clean
+    shutil.rmtree(OUTPUT_DIR)
+    print("🧹 Cleanup done.")
 
 if __name__ == "__main__":
     run_automation()
