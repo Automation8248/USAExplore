@@ -19,12 +19,10 @@ QUERIES = [
 ]
 
 HISTORY_FILE = "history.txt"
-SCREENSHOT_DIR = "debug_screenshots" # Screenshot save karne ka folder
-
-# Make sure screenshot folder exists
+SCREENSHOT_DIR = "debug_screenshots"
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
-# 15+ Unique User-Agents
+# 15+ Unique Browsers (Chrome, Firefox, Safari, Edge, Mobile OS)
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
@@ -43,9 +41,6 @@ USER_AGENTS = [
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.5993.70 Safari/537.36"
 ]
 
-# ==========================================
-# HELPER FUNCTIONS
-# ==========================================
 def get_seo_content(query_text):
     title = f"Exploring {query_text} - United States"
     fb_tags = "#USA #TravelUSA #AmericanCulture #ExploreMore #Vacation"
@@ -63,9 +58,6 @@ def save_history(url):
     with open(HISTORY_FILE, "a") as f:
         f.write(url + "\n")
 
-# ==========================================
-# MAIN HUMAN-BEHAVIOR AUTOMATION
-# ==========================================
 def run_automation():
     history = get_history()
     base_query = random.choice(QUERIES)
@@ -81,7 +73,7 @@ def run_automation():
             
         browser_engine = random.choice(["chromium", "firefox", "webkit"])
         user_agent = random.choice(USER_AGENTS)
-        print(f"Attempt {attempt + 1}: Using {browser_engine.upper()}")
+        print(f"Attempt {attempt + 1}: Using Engine '{browser_engine.upper()}' with random browser profile")
 
         try:
             with sync_playwright() as p:
@@ -96,37 +88,37 @@ def run_automation():
                 # --- 1. OPEN GOOGLE ---
                 print("1. Opening Google.com")
                 page.goto("https://www.google.com/")
-                page.wait_for_timeout(random.randint(2000, 4000))
-                page.screenshot(path=f"{SCREENSHOT_DIR}/1_homepage.png") # SCREENSHOT
+                page.wait_for_timeout(random.randint(1500, 2500))
+                page.screenshot(path=f"{SCREENSHOT_DIR}/1_homepage.png")
                 
                 # --- 2. HUMAN TYPING ---
                 print("2. Typing like a human...")
                 search_input = page.locator('[name="q"]')
-                search_input.press_sequentially(search_query, delay=random.randint(50, 150))
-                page.wait_for_timeout(random.randint(800, 1500))
+                search_input.press_sequentially(search_query, delay=random.randint(40, 100))
+                page.wait_for_timeout(random.randint(800, 1200))
                 search_input.press("Enter")
                 page.wait_for_load_state("networkidle")
-                page.wait_for_timeout(random.randint(2000, 3000))
-                page.screenshot(path=f"{SCREENSHOT_DIR}/2_search_results.png") # SCREENSHOT
+                page.wait_for_timeout(random.randint(1500, 2500))
+                page.screenshot(path=f"{SCREENSHOT_DIR}/2_search_results.png")
                 
                 # --- 3. CLICK IMAGES TAB ---
                 print("3. Clicking 'Images' tab")
                 page.locator("a", has_text="Images").first.click()
-                page.wait_for_timeout(random.randint(3000, 5000))
-                page.screenshot(path=f"{SCREENSHOT_DIR}/3_images_tab.png") # SCREENSHOT
+                page.wait_for_timeout(random.randint(2000, 4000))
+                page.screenshot(path=f"{SCREENSHOT_DIR}/3_images_tab.png")
                 
                 # --- 4. HUMAN SCROLLING ---
                 print("4. Scrolling naturally...")
                 page.mouse.wheel(0, random.randint(600, 1200))
-                page.wait_for_timeout(random.randint(1500, 3000))
-                page.screenshot(path=f"{SCREENSHOT_DIR}/4_after_scroll.png") # SCREENSHOT
+                page.wait_for_timeout(random.randint(1000, 2000))
+                page.screenshot(path=f"{SCREENSHOT_DIR}/4_after_scroll.png")
                 
                 # --- 5. CLICK A THUMBNAIL ---
                 print("5. Clicking a photo to open HD preview...")
                 index_to_click = random.randint(0, 4)
                 page.locator("div[data-ri] img, img[jsname='Q4LuWd']").nth(index_to_click).click(force=True)
-                page.wait_for_timeout(random.randint(4000, 7000))
-                page.screenshot(path=f"{SCREENSHOT_DIR}/5_hd_preview_open.png") # SCREENSHOT
+                page.wait_for_timeout(random.randint(3000, 5000))
+                page.screenshot(path=f"{SCREENSHOT_DIR}/5_hd_preview_open.png")
                 
                 # --- 6. EXTRACT & DOWNLOAD ---
                 print("6. Extracting HD image URL...")
@@ -176,10 +168,9 @@ def run_automation():
                 
         except Exception as e:
             print(f"Attempt {attempt + 1} Failed: {e}")
-            # Screenshot of the error state
             if 'page' in locals():
                 page.screenshot(path=f"{SCREENSHOT_DIR}/error_attempt_{attempt+1}.png")
-            time.sleep(3)
+            time.sleep(2)
             continue
 
 if __name__ == "__main__":
