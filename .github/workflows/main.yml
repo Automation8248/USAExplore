@@ -2,7 +2,8 @@ name: USA Bing Automation
 
 on:
   schedule:
-    - cron: '0 */4 * * *'
+    # Din mein do baar: US Morning (9 AM) aur US Evening (8 PM)
+    - cron: '0 1,14 * * *'
   workflow_dispatch:
 
 jobs:
